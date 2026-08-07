@@ -1,0 +1,33 @@
+{
+  "name": "the-loom",
+  "description": "The suite of tools providing guard rails and support for agentic development.",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.15.1",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "gate-check": "pnpm exec gate-checks",
+    "task": "pnpm exec task"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@the-loom/gate-checks": "workspace:*",
+    "@the-loom/task-phases": "workspace:*",
+    "eslint": "^10.7.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.65.0",
+    "@types/node": "^26.1.1",
+    "vitest": "4.1.10"
+  }
+}
