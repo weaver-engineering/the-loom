@@ -44,6 +44,7 @@ jobs:
         run: pnpm -r build
 
       - name: Version or Publish
+        id: changesets
         uses: changesets/action@v1
         with:
           version: pnpm changeset version
@@ -51,3 +52,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Surface the Version Packages PR in simonemmott's PR list
+        # changesets/action's PR is authored by github-actions[bot] -- since
+        # that's neither the author, assignee, reviewer, nor a mention for
+        # a human, it doesn't show up in github.com/pulls even though it
+        # needs a human merge (only humans may approve PRs here). Only set
+        # when this run opened/updated a PR rather than publishing.
+        if: steps.changesets.outputs.pullRequestNumber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit "${{ steps.changesets.outputs.pullRequestNumber }}" \
+            --add-reviewer simonemmott --add-assignee simonemmott
