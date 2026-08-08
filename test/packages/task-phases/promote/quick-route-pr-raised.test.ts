@@ -12,7 +12,9 @@
  * ("main-gate") as the regular route's final gate (§2.1: don't conflate
  * the two phases just because the gate name matches).
  *
- * Three behaviors under test, separated per §3:
+ * Four behaviors under test, separated per §3 (the fourth, WVR-61's
+ * `[title] [message]` positional args, isn't part of the original §3 spec
+ * — it's a later addition, same relationship `push` (WVR-60) has to §3.1):
  *   1. Finding `task/{ref}` resolved `ready` (via `resolveReady()`), the
  *      quick route's `promote` raises the Main Gate PR through
  *      `github.createPR("main", "task/{ref}", ...)` and reports
@@ -29,6 +31,13 @@
  *      no-op as the test-phase case: `action: "none"`,
  *      `github.createPR` NOT called again, the reported message re-states
  *      the existing PR's number (§3.3).
+ *   4. `promote [title] [message]`, mirroring `wip`'s convention: with
+ *      neither, the PR title/body fall back to a generic
+ *      `{ref}: Promote to ...` description; with a title only, the title
+ *      becomes `{ref}: {title}` and the body stays generic; with both,
+ *      the body is `message` verbatim (WVR-61) — the caller (human or
+ *      agent, via the opencode tool wrapper's raw `args` passthrough)
+ *      supplying real context beats any template.
  *
  * Same in-process pattern as every prior chunk: `run(argv, tools)` is
  * called directly with an injected `ExternalTools` whose `git`/`github`/
@@ -295,8 +304,17 @@ function parseJson(
 async function runPromote(
   tools: ExternalTools,
 ): Promise<{ code: number; doc: { command: string; result: JsonPromoteResult; success: boolean } }> {
+  return runPromoteArgv(tools, []);
+}
+
+/** As `runPromote`, but with extra argv tokens before `--json` — used for
+ *  the `[title] [message]` positional scenarios (WVR-61). */
+async function runPromoteArgv(
+  tools: ExternalTools,
+  extra: string[],
+): Promise<{ code: number; doc: { command: string; result: JsonPromoteResult; success: boolean } }> {
   const cap = captureStdout();
-  const code = await run(["node", "cli.js", "promote", "--json"], tools);
+  const code = await run(["node", "cli.js", "promote", ...extra, "--json"], tools);
   const stdout = cap.stdout();
   cap.restore();
   return { code, doc: parseJson(stdout) };
@@ -335,6 +353,41 @@ describe("promote: raises the Main Gate PR from the quick route (§3.1)", () => 
     expect(doc.result.success).toBe(true);
     expect(doc.success).toBe(true);
     expect(code).toBe(0);
+  });
+});
+
+describe("promote: [title] [message] shape the raised PR (WVR-61)", () => {
+  it("uses a generic {ref}: Promote to ... title/body when neither is supplied", async () => {
+    const { tools, mocks } = buildTools();
+    await runPromote(tools);
+
+    const opts = mocks.createPR.mock.calls[0][2] as { title: string; body: string };
+    expect(opts.title).toBe("AAA-234: Promote to main (Main Gate)");
+    expect(opts.body).toContain("AAA-234");
+    expect(opts.body).toContain("task promote");
+  });
+
+  it("uses {ref}: {title} and a generic body when only a title is supplied", async () => {
+    const { tools, mocks } = buildTools();
+    await runPromoteArgv(tools, ["Add retry to the sync job"]);
+
+    const opts = mocks.createPR.mock.calls[0][2] as { title: string; body: string };
+    expect(opts.title).toBe("AAA-234: Add retry to the sync job");
+    expect(opts.body).toContain("AAA-234");
+  });
+
+  it("uses {ref}: {title} and the message verbatim as the body when both are supplied", async () => {
+    const { tools, mocks } = buildTools();
+    await runPromoteArgv(tools, [
+      "Add retry to the sync job",
+      "Retries transient network failures up to 3 times before giving up.",
+    ]);
+
+    const opts = mocks.createPR.mock.calls[0][2] as { title: string; body: string };
+    expect(opts.title).toBe("AAA-234: Add retry to the sync job");
+    expect(opts.body).toBe(
+      "Retries transient network failures up to 3 times before giving up.",
+    );
   });
 });
 
