@@ -179,7 +179,7 @@ function cleanupPair(clone: string, base: string, head: string): void {
 beforeAll(() => {
   // Ensure the CLI is built — this must succeed or none of the tests can run
   try {
-    execFileSync("pnpm", ["--filter", "@the-loom/task-phases", "build"], {
+    execFileSync("pnpm", ["--filter", "@weaver-engineering/task-phases", "build"], {
       cwd: resolve(__dirname, "../../../.."),
       stdio: "pipe",
     });

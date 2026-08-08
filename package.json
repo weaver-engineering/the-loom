@@ -18,16 +18,18 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "gate-check": "pnpm exec gate-checks",
-    "task": "pnpm exec task"
+    "task": "pnpm exec task",
+    "changeset": "changeset"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
-    "@the-loom/gate-checks": "workspace:*",
-    "@the-loom/task-phases": "workspace:*",
+    "@types/node": "^26.1.1",
+    "@weaver-engineering/gate-checks": "workspace:*",
+    "@weaver-engineering/task-phases": "workspace:*",
     "eslint": "^10.7.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.65.0",
-    "@types/node": "^26.1.1",
     "vitest": "4.1.10"
   }
 }

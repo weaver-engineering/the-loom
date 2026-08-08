@@ -8,7 +8,7 @@ import type { GateCheckResult } from "./types.js";
 
 /**
  * The package's public library entry point — the thing an external
- * consumer (e.g. `@the-loom/task-phases`'s `GateChecksTool`) actually
+ * consumer (e.g. `@weaver-engineering/task-phases`'s `GateChecksTool`) actually
  * depends on. Constructing `GitInspectorImpl`/`CoverageInspectorImpl`
  * directly is `cli.ts`'s own concern (and gate-checks' own test doubles'
  * — dependency injection exists for mocking *this* package's unit tests,

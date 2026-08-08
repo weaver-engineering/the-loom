@@ -2,14 +2,14 @@
  * System tests for the `GateChecksTool` — the `ExternalTools.gateChecks`
  * wrapper (task-phasing-lld.md §4.7/§4.7.1): `gateFor` (the pure
  * `Phase` → `GateName` mapping) and `run` (calls through to
- * `@the-loom/gate-checks`'s public `runCheck` and returns its result
+ * `@weaver-engineering/gate-checks`'s public `runCheck` and returns its result
  * unmodified).
  *
  * Per the spec's Correction, this chunk is *not* one of the
- * "prove it for real" dev-testing chunks: `@the-loom/gate-checks` is
+ * "prove it for real" dev-testing chunks: `@weaver-engineering/gate-checks` is
  * an existing, already-thoroughly-tested dependency in this monorepo, so
  * the automated suite calls `GateChecksTool` directly at the TypeScript
- * level with `runCheck` mocked (`vi.mock("@the-loom/gate-checks",
+ * level with `runCheck` mocked (`vi.mock("@weaver-engineering/gate-checks",
  * ...)`), and asserts only the pass-through contract — the right gate
  * name, `args` passed through unchanged (including `ref`), and the result
  * relayed unmodified. It must not spin up real git repositories and must
@@ -32,11 +32,11 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@the-loom/gate-checks", () => ({
+vi.mock("@weaver-engineering/gate-checks", () => ({
   runCheck: vi.fn(),
 }));
 
-import { runCheck } from "@the-loom/gate-checks";
+import { runCheck } from "@weaver-engineering/gate-checks";
 import { RealGateChecksTool } from "../../../../packages/task-phases/src/deps/gate-check.js";
 import type {
   GateCheckResult,

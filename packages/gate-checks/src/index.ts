@@ -1,5 +1,5 @@
 /**
- * `@the-loom/gate-checks`'s public library entry point — matching
+ * `@weaver-engineering/gate-checks`'s public library entry point — matching
  * `package.json`'s `"main": "index.js"`, which had no corresponding
  * source file until now. `runCheck`/`listChecks` are what an external
  * consumer needs: everything else (the inspector implementations, the
