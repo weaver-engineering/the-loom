@@ -74,6 +74,35 @@ function stateLine(ref: string, phase: Phase | null, state: TaskState): string {
   return `Task::Phase::State ${refPart}::${phasePart}::${state}`;
 }
 
+/** Builds the title/body for a gate PR `promote` raises (WVR-61). Mirrors
+ * `wip`'s `[title] [message]` convention (the caller — a human or an
+ * agent driving `task promote` through the opencode tool wrapper's raw
+ * `args` passthrough — knows what actually changed far better than any
+ * generic template could): with a `title`, the PR title becomes `{ref}:
+ * {title}` (matching this repo's own commit/PR convention) and the body
+ * is `message` verbatim, or a one-line "why" if `message` is omitted.
+ * With no `title` at all, both fall back to a description of the
+ * mechanical action itself — better than an empty body, but no substitute
+ * for the caller supplying real context. */
+function prTitleAndBody(
+  ref: string,
+  title: string | undefined,
+  message: string | undefined,
+  destination: string,
+  gate: string,
+): { title: string; body: string } {
+  if (title !== undefined) {
+    return {
+      title: `${ref}: ${title}`,
+      body: message ?? `Promotes ${ref} to \`${destination}\` (${gate}).`,
+    };
+  }
+  return {
+    title: `${ref}: Promote to ${destination} (${gate})`,
+    body: `Raised by \`task promote\` — ${ref} to \`${destination}\` (${gate}). No title/message was supplied to \`promote\`; re-run with \`task promote "<title>" "<message>"\` for a more useful PR description.`,
+  };
+}
+
 /** Reads a single line of confirmation input from `process.stdin` for the
  *  interactive y/N path (spec 14 §3.6) — mirrors `cli.ts`'s `readStdin()`
  *  technique (`data`/`end` events, read to completion) rather than
@@ -103,6 +132,18 @@ export async function promote(
 
   const currentBranch = await tools.git.currentBranch();
   const ref = deriveRefFromBranch(currentBranch) ?? "";
+
+  // `promote [title] [message]` (WVR-61) — positional, same convention as
+  // `wip`/`init --wip`: whichever gate PR this run ends up raising uses
+  // these for its title/body instead of a generic template.
+  const positionals =
+    args.positionals === undefined
+      ? []
+      : Array.isArray(args.positionals)
+        ? args.positionals
+        : [args.positionals];
+  const prTitleArg = typeof positionals[0] === "string" ? positionals[0] : undefined;
+  const prMessageArg = typeof positionals[1] === "string" ? positionals[1] : undefined;
 
   // The derivation pipeline is shared with `status` — never re-derived here.
   let taskStatus = await deriveRepoState(tools, ref, currentBranch);
@@ -504,9 +545,11 @@ export async function promote(
       await tools.git.createRemoteBranch(buildBranch, "origin/main");
     }
     await tools.git.push(headBranch);
-    const pr = await tools.github.createPR(buildBranch, headBranch, {
-      title: `Task ${ref}: promote ${ref}::test::ready to build (Build Gate)`,
-    });
+    const pr = await tools.github.createPR(
+      buildBranch,
+      headBranch,
+      prTitleAndBody(ref, prTitleArg, prMessageArg, buildBranch, "Build Gate"),
+    );
     return {
       success: true,
       action: "pr-raised",
@@ -533,9 +576,11 @@ export async function promote(
   if (taskStatus.state === "ready" && taskStatus.phase === "quick") {
     const headBranch = `task/${ref}`;
     await tools.git.push(headBranch);
-    const pr = await tools.github.createPR("main", headBranch, {
-      title: `Task ${ref}: promote ${ref}::quick::ready to main (Main Gate)`,
-    });
+    const pr = await tools.github.createPR(
+      "main",
+      headBranch,
+      prTitleAndBody(ref, prTitleArg, prMessageArg, "main", "Main Gate"),
+    );
     return {
       success: true,
       action: "pr-raised",
@@ -590,9 +635,11 @@ export async function promote(
     }
     await tools.git.createBranch(readyBranch, buildBranch);
     await tools.git.push(readyBranch);
-    const pr = await tools.github.createPR("main", readyBranch, {
-      title: `Task ${ref}: promote ${ref}::build::ready to main (Main Gate)`,
-    });
+    const pr = await tools.github.createPR(
+      "main",
+      readyBranch,
+      prTitleAndBody(ref, prTitleArg, prMessageArg, "main", "Main Gate"),
+    );
     // createBranch checks the new branch out (`git checkout -b`), so the
     // caller's starting branch is explicitly restored afterward (§3.2).
     await tools.git.checkout(buildBranch);

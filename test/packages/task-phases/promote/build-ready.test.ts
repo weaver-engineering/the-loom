@@ -440,9 +440,12 @@ describe("promote: build::ready creates ready/{ref}, pushes, and raises the Main
     );
     const prOrder = mocks.createPR.mock.invocationCallOrder[0];
     expect(prOrder).toBeGreaterThan(pushOrder);
+    // WVR-61: no title/message was supplied to promote, so the PR title
+    // falls back to `{ref}: Promote to {destination} ({gate})` rather than
+    // exposing internal phase::state terminology.
     const title = mocks.createPR.mock.calls[0][2].title as string;
     expect(title).toContain("AAA-123");
-    expect(title).toContain("build::ready");
+    expect(title).toContain("Main Gate");
 
     // Result contract: action pr-raised with the PR's number/url, exit 0.
     expect(doc.result.action).toBe("pr-raised");
