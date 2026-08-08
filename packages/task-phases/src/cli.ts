@@ -385,7 +385,7 @@ function buildRealTools(): ExternalTools {
 }
 
 /** `import.meta.url` resolves through symlinks (e.g. pnpm's `.bin` shims,
- * or the workspace-linked `node_modules/@the-loom/task-phases` ->
+ * or the workspace-linked `node_modules/@weaver-engineering/task-phases` ->
  * `packages/task-phases`) but `process.argv[1]` does not — comparing
  * them raw would silently fail to detect "run as the real bin" whenever
  * invoked through either of those, which is the common case. */

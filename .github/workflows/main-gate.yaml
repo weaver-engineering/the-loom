@@ -11,6 +11,24 @@ name: Main Gate
 # packages/gate-checks for the implementation; nothing here re-derives it.
 # Human approval (required reviewers) and human override (admin bypass of a
 # failing required check) are configured in branch protection, not here.
+#
+# changeset-release/main (opened by .github/workflows/release.yaml via
+# changesets/action) is a third, bot-authored source: its commit(s) don't
+# follow the human task/ready commit-message or branch-ref conventions
+# gate-checks enforces, so it can't go through `pnpm gate-check main-gate`
+# as-is. It still builds and runs the real test suite before being allowed
+# to merge — see "Verify Version Packages PR" below — just without the
+# commit-structure checks that don't apply to it.
+#
+# That branch name is not, by itself, proof of anything — the
+# branch-naming-policy ruleset had to be relaxed to let it be created at
+# all (see WVR-53), so anyone who can push branches to this repo could
+# otherwise open a PR from a same-named branch and land arbitrary changes
+# through this lighter path. Two checks close that: the job only takes
+# this path when the PR was actually opened by github-actions[bot] (not
+# spoofable without this repo's own GITHUB_TOKEN), and "Verify Version
+# Packages PR only touches version-bump files" fails the run outright if
+# the diff contains anything `changeset version` couldn't have produced.
 
 on:
   pull_request:
@@ -28,7 +46,7 @@ permissions:
 
 jobs:
   validate-main-gate:
-    if: startsWith(github.head_ref, 'ready/') || startsWith(github.head_ref, 'task/')
+    if: startsWith(github.head_ref, 'ready/') || startsWith(github.head_ref, 'task/') || (github.head_ref == 'changeset-release/main' && github.event.pull_request.user.login == 'github-actions[bot]')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -48,6 +66,19 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
 
+      - name: Verify Version Packages PR only touches version-bump files
+        if: github.head_ref == 'changeset-release/main'
+        run: |
+          CHANGED=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD")
+          echo "Changed files:"
+          echo "$CHANGED"
+          DISALLOWED=$(echo "$CHANGED" | grep -Ev '(^|/)(package\.json|CHANGELOG\.md)$|^\.changeset/.*\.md$|^pnpm-lock\.yaml$' || true)
+          if [ -n "$DISALLOWED" ]; then
+            echo "::error::changeset-release/main may only touch package.json/CHANGELOG.md/.changeset files and pnpm-lock.yaml -- found unexpected changes:"
+            echo "$DISALLOWED"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -58,6 +89,7 @@ jobs:
         run: rm -rf node_modules && pnpm install --frozen-lockfile
 
       - name: Run Main Gate
+        if: github.head_ref != 'changeset-release/main'
         env:
           # The test suite's own gh.test.ts (MAG-46 spec 03) runs real
           # gh commands against a separate fixture repo
@@ -87,6 +119,16 @@ jobs:
             --head-ref "${{ github.head_ref }}" \
             --destination-branch "origin/${{ github.event.pull_request.base.ref }}" \
             --json | tee result.json | node .github/scripts/json-to-yaml.mjs
+
+      - name: Verify Version Packages PR (build + test only — no commit/branch gate)
+        if: github.head_ref == 'changeset-release/main'
+        env:
+          # Same reasoning as "Run Main Gate" above — the test suite's own
+          # gh.test.ts needs a token that can see the sandbox fixture repo.
+          GH_TOKEN: ${{ secrets.SANDBOX_GH_TOKEN }}
+        run: |
+          gh auth setup-git
+          pnpm test
 
       - name: Upload gate-check artifacts
         if: always()

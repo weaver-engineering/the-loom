@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { catalog } from "@the-loom/gate-checks/src/checks/index.js";
+import { catalog } from "@weaver-engineering/gate-checks/src/checks/index.js";
 
 describe("checks/index catalog", () => {
   it("exports catalog as an object", () => {

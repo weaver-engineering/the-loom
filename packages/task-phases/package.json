@@ -1,16 +1,20 @@
 {
-  "name": "@the-loom/task-phases",
+  "name": "@weaver-engineering/task-phases",
   "description": "CLI to monitor and manage task phase transitions (spec -> test -> build -> deploy) for The Loom",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/cli.js",
   "bin": { "task": "./dist/cli.js" },
+  "files": ["dist"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
     "test": "vitest run"
   },
   "dependencies": {
-    "@the-loom/gate-checks": "workspace:*",
+    "@weaver-engineering/gate-checks": "workspace:*",
     "simple-git": "^3.36.0"
   },
   "devDependencies": {

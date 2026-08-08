@@ -1,11 +1,15 @@
 {
-  "name": "@the-loom/gate-checks",
+  "name": "@weaver-engineering/gate-checks",
   "description": "The CI/CD gate checks for The Loom",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": { "gate-checks": "./dist/cli.js" },
+  "files": ["dist"],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
     "test": "vitest run"

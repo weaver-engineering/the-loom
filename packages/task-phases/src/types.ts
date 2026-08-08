@@ -226,10 +226,10 @@ export interface ExternalTools {
 }
 
 /**
- * The standardised output of `@the-loom/gate-checks`. Declared locally
+ * The standardised output of `@weaver-engineering/gate-checks`. Declared locally
  * rather than imported — the real package doesn't expose a stable public
  * entry point to import from yet — but the shape must stay in lockstep
- * with `@the-loom/gate-checks`'s own `GateCheckResult`.
+ * with `@weaver-engineering/gate-checks`'s own `GateCheckResult`.
  */
 export interface GateCheckResult {
   /** The name of the check */

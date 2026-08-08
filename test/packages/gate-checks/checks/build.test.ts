@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { fn, requiredArgs } from "@the-loom/gate-checks/src/checks/build.js";
-import type { CoverageInspector, GitInspector, Inspectors } from "@the-loom/gate-checks/dist/types.js";
+import { fn, requiredArgs } from "@weaver-engineering/gate-checks/src/checks/build.js";
+import type { CoverageInspector, GitInspector, Inspectors } from "@weaver-engineering/gate-checks/dist/types.js";
 
 function createMockInspectors(success: boolean, output: string): Inspectors {
   return {

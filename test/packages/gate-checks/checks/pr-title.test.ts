@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { fn, requiredArgs } from "@the-loom/gate-checks/src/checks/pr-title.js";
-import type { Inspectors } from "@the-loom/gate-checks/dist/types.js";
+import { fn, requiredArgs } from "@weaver-engineering/gate-checks/src/checks/pr-title.js";
+import type { Inspectors } from "@weaver-engineering/gate-checks/dist/types.js";
 
 const mockInspectors = {} as unknown as Inspectors;
 
