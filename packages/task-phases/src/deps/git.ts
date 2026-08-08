@@ -6,9 +6,12 @@
  * Spec 01 implements `fetch`, `currentBranch`, `branchExists`, `headSha`,
  * `createBranch`, `checkout`, `commitAll`, `push`. Spec 05.01 implements
  * `isDirty`, `hasCommitsBeyond`, `headCommitTitle`, `pullFastForward`,
- * `deleteBranch`. Spec 07 implements `changedFiles`. The remaining methods
- * (`mergeBase`, `isAncestor`, `rebase`) still throw — real implementations
- * land with the chunk that owns them (MAG-46-13).
+ * `deleteBranch`. Spec 07 implements `changedFiles`. `isAncestor` landed
+ * early (real, in `packages/task-phases/src/deps/git.ts`) to unblock the
+ * spec 10 `promote` success path, which re-derives the post-fork status via
+ * `deriveRepoState()` and reaches it. Spec 13 implements the final two
+ * stubs — `mergeBase` and `rebase` (the force-push-adjacent primitive
+ * every §3.5 rebase-forward case depends on).
  */
 
 import { execFile } from "node:child_process";
@@ -60,6 +63,14 @@ export interface GitTool {
   /** Local only — does not push; callers must follow up with `push()`. */
   createBranch(newBranch: string, fromRef: string): Promise<void>;
 
+  /** `git push origin <fromRef>:refs/heads/<newBranch>` — publishes an
+   * already-existing ref `fromRef` (e.g. `origin/main`) to a newly-named
+   * branch `newBranch` (e.g. `build/{ref}`) on `origin`, without creating
+   * or checking `newBranch` out locally (spec 11 §3.1.1).
+   * Throws if `newBranch` already exists on origin (the caller checks
+   * `branchExists` first). */
+  createRemoteBranch(newBranch: string, fromRef: string): Promise<void>;
+
   checkout(branch: string): Promise<void>;
 
   commitAll(title: string, message?: string): Promise<string>;
@@ -68,11 +79,36 @@ export interface GitTool {
 
   pullFastForward(branch: string): Promise<void>;
 
-  /** Reports rather than resolves a conflict — newly-merged, human-reviewed
+  /** Rebases `branch` onto `ontoRef` in place (no push) — the shared
+   * primitive behind every §3.5 rebase-forward case (spec-amended-under-
+   * test, build-reorder, main-drift). Derives `upstream` as
+   * `mergeBase(branch, ontoRef)` — the boundary between the branch's own
+   * commits and what it shares with its target — then verifies the
+   * commit-count precondition (`rev-list --count upstream..branch == 1`)
+   * *before* any rewrite is attempted, refusing with
+   * `unexpected-commit-count` otherwise (the branch is left completely
+   * untouched). If exactly 1, runs `git rebase --onto <ontoRef>
+   * <upstream> <branch>` and reports `conflict` or `ok`. The `<branch>`
+   * argument checks the branch out as part of the operation (§2.1 —
+   * callers restore the starting branch themselves). Reports rather than
+   * resolves a conflict, leaving the repository mid-rebase for a
+   * human/agent to resolve manually — newly-merged, human-reviewed
    * content always takes precedence over the branch being rebased. */
   rebase(branch: string, ontoRef: string): Promise<RebaseOutcome>;
 
   deleteBranch(branch: string): Promise<void>;
+
+  /** `git for-each-ref --format='%(refname:short)' refs/heads
+   * refs/remotes/origin` — every local branch name (`test/{ref}`) and every
+   * remote-tracking branch name in its short form (`origin/test/{ref}`), in
+   * one call. Sole caller is `list` (§3.10, MAG-46-16) — the first command
+   * to need branch enumeration, which no earlier chunk's surface supported
+   * (every other command already knows the specific ref/branch it's asking
+   * about). The caller strips any `origin/` prefix and any `spec`/`test`/
+   * `build`/`task` phase prefix, matches what remains against
+   * `/^[A-Z]+-[0-9]+$/`, and groups both forms of the same branch under one
+   * `{ref}` entry. */
+  listBranches(): Promise<string[]>;
 }
 
 export class RealGitTool implements GitTool {
@@ -122,14 +158,30 @@ export class RealGitTool implements GitTool {
     return (await this.git.raw(["rev-parse", branch])).trim();
   }
 
-  mergeBase(_refA: string, _refB: string): Promise<string> {
-    throw new Error("not implemented");
+  /** `git merge-base <refA> <refB>` — the nearest common ancestor SHA of
+   * two refs. `rebase()`'s upstream-boundary derivation (§4.8) is built on
+   * this, so it shares the same execFile-for-git pattern. */
+  async mergeBase(refA: string, refB: string): Promise<string> {
+    return (await this.git.raw(["merge-base", refA, refB])).trim();
   }
 
   /** `git rev-list --count <parentBranch>..<branch>` — commits unique to
    * `branch` relative to `parentBranch`. Nonzero distinguishes
-   * `not-started` from `work-in-progress`/`ready?` (§2, §4.5). */
+   * `not-started` from `work-in-progress`/`ready?` (§2, §4.5).
+   *
+   * Total with respect to the parent: a parent that doesn't resolve — e.g.
+   * `spec/{ref}` for a remote-only `test/{ref}` that was never forked
+   * locally — would otherwise make `rev-list` fail with "unknown revision"
+   * and crash the whole derivation. Resolve the parent first; a branch
+   * whose parent doesn't exist has no commits of its own to count, so
+   * report `false` (the same answer a level fork gives), which
+   * `deriveState` reads as `not-started` (spec 16 §2.1). */
   async hasCommitsBeyond(branch: string, parentBranch: string): Promise<boolean> {
+    try {
+      await this.git.raw(["rev-parse", "--verify", `${parentBranch}^{commit}`]);
+    } catch {
+      return false;
+    }
     const count = (
       await this.git.raw(["rev-list", "--count", `${parentBranch}..${branch}`])
     ).trim();
@@ -181,8 +233,36 @@ export class RealGitTool implements GitTool {
     return { added, changed, deleted };
   }
 
-  isAncestor(_ancestor: string, _descendant: string): Promise<boolean> {
-    throw new Error("not implemented");
+  /** `git merge-base --is-ancestor <ancestor> <descendant>` — determines
+   * whether `<ancestor>` is an ancestor of `<descendant>`. Exit code 0
+   * means true, exit code 1 a legitimate false (as the interface's
+   * docstring notes), and anything else (e.g. an unknown ref, exit 128) a
+   * genuine error — which is surfaced via git's own stderr, or a generic
+   * message when git produced none. Read the exit code via execFile
+   * directly (the same pattern `pullFastForward` uses) because simple-git
+   * treats a nonzero exit as a failure only when it's accompanied by
+   * stderr, and `merge-base --is-ancestor`'s exit-1 `false` is silent. */
+  async isAncestor(ancestor: string, descendant: string): Promise<boolean> {
+    try {
+      await execFileAsync(
+        "git",
+        ["merge-base", "--is-ancestor", ancestor, descendant],
+        { cwd: this.cwd, encoding: "utf-8" },
+      );
+      return true;
+    } catch (error) {
+      const err = error as { code?: number; stderr?: string | Buffer };
+      if (err.code === 1) {
+        return false;
+      }
+      const stderrText = (err.stderr ?? "").toString().trim();
+      throw new Error(
+        stderrText.length > 0
+          ? stderrText
+          : `git merge-base --is-ancestor ${ancestor} ${descendant} failed (exit code ${err.code ?? "unknown"})`,
+        { cause: error },
+      );
+    }
   }
 
   /** `git checkout -b <newBranch> <fromRef>` — creates `newBranch` off
@@ -195,6 +275,16 @@ export class RealGitTool implements GitTool {
   /** `git checkout <branch>` — switches to an already-existing branch. */
   async checkout(branch: string): Promise<void> {
     await this.git.raw(["checkout", branch]);
+  }
+
+  /** `git push origin <fromRef>:refs/heads/<newBranch>` — publishes an
+   * already-existing ref `fromRef` (e.g. `origin/main`) to a newly-named
+   * branch `newBranch` (e.g. `build/{ref}`) on `origin` straight, without
+   * creating or checking `newBranch` out locally — the base branch a
+   * `gh pr create --base build/{ref}` would 422 against if it didn't exist
+   * (spec 11 §2.1/§3.1.1). */
+  async createRemoteBranch(newBranch: string, fromRef: string): Promise<void> {
+    await this.git.raw(["push", "origin", `${fromRef}:refs/heads/${newBranch}`]);
   }
 
   /** `git add -A && git commit -m "<title>" [-m "<message>"]`, then
@@ -227,10 +317,22 @@ export class RealGitTool implements GitTool {
    * separately if they want to switch to it).
    * If it does exist: first verify `git merge-base --is-ancestor
    * <branch> origin/<branch>` — a genuine fast-forward must actually be
-   * possible — then `git branch -f <branch> origin/<branch>`. The
+   * possible — then fast-forward the local ref to `origin/<branch>`. The
    * verification matters: blindly forcing the ref without checking
    * direction would silently discard a local-only commit if this were
-   * ever called on a branch that had diverged. */
+   * ever called on a branch that had diverged.
+   *
+   * How the ref is moved depends on whether `branch` is checked out:
+   * `git branch -f <branch> <originRef>` refuses (`fatal: Cannot force
+   * update the current branch.`) when `<branch>` is the currently
+   * checked-out branch — which is exactly the situation `promote`'s
+   * `merged-pending-pull` resolution is always in, since its own
+   * `branchMismatch` guard forces the caller onto `build/{ref}` before
+   * calling this (spec 10/14). So when `branch === currentBranch`, the
+   * fast-forward is done in place with `git merge --ff-only <originRef>`
+   * instead — which moves the checked-out branch forward only if the
+   * update genuinely is a fast-forward and errors (cleanly, on a real
+   * divergence) otherwise. */
   async pullFastForward(branch: string): Promise<void> {
     const originRef = `origin/${branch}`;
     if (!(await this.branchExists(branch))) {
@@ -267,11 +369,90 @@ export class RealGitTool implements GitTool {
         { cause: error },
       );
     }
+    if ((await this.currentBranch()) === branch) {
+      // `git branch -f` cannot force-update the currently checked-out
+      // branch, so fast-forward in place instead. `git merge --ff-only`
+      // moves the checked-out branch head to `origin/<branch>` only when
+      // that update really is a fast-forward (already verified above) and
+      // leaves it untouched on any genuine divergence.
+      await this.git.raw(["merge", "--ff-only", originRef]);
+      return;
+    }
     await this.git.raw(["branch", "-f", branch, originRef]);
   }
 
-  rebase(_branch: string, _ontoRef: string): Promise<RebaseOutcome> {
-    throw new Error("not implemented");
+  /** Rebases `branch` onto `ontoRef` in place (no push) — the shared
+   * primitive behind every §3.5 rebase-forward case (spec-amended-under-
+   * test, build-reorder, main-drift). `upstream` is derived as
+   * `mergeBase(branch, ontoRef)`, then the commit-count precondition
+   * (`rev-list --count upstream..branch == 1`) is verified *before* any
+   * rewrite is attempted — a branch with zero or more than one commit of
+   * its own is refused cleanly with `unexpected-commit-count`, left
+   * completely untouched. If exactly 1, runs `git rebase --onto <ontoRef>
+   * <upstream> <branch>`. execFile (not simple-git) so the exit code and
+   * git's own stdout/stderr can be read: a content conflict exits 1 and
+   * must be reported as its own outcome (leaving the repository
+   * mid-rebase, never auto-aborted), while anything else (an unknown ref,
+   * a dirty worktree) is a genuine error to surface. */
+  async rebase(branch: string, ontoRef: string): Promise<RebaseOutcome> {
+    const upstream = await this.mergeBase(branch, ontoRef);
+
+    const count = Number(
+      (await this.git.raw(["rev-list", "--count", `${upstream}..${branch}`])).trim(),
+    );
+    if (count !== 1) {
+      return {
+        status: "unexpected-commit-count",
+        expected: 1,
+        actual: count,
+        details: `Expected exactly 1 commit unique to ${branch} relative to ${upstream}, found ${count}`,
+      };
+    }
+
+    try {
+      await execFileAsync(
+        "git",
+        ["rebase", "--onto", ontoRef, upstream, branch],
+        { cwd: this.cwd, encoding: "utf-8" },
+      );
+      return { status: "ok" };
+    } catch (error) {
+      const err = error as { code?: number; stdout?: string | Buffer; stderr?: string | Buffer };
+      const stdout = (err.stdout ?? "").toString();
+      const stderr = (err.stderr ?? "").toString();
+
+      // Distinguish a genuine content conflict (git rebase exit 1, CONFLICT
+      // lines on stdout, unmerged paths left in the worktree) from any other
+      // failure (exit 128, fatal on stderr). The unmerged-path check via
+      // `git diff --name-only --diff-filter=U` is the decisive signal — a
+      // conflicted rebase always leaves at least one path unmerged.
+      let unmerged: string;
+      try {
+        unmerged = (await this.git.raw(["diff", "--name-only", "--diff-filter=U"])).trim();
+      } catch {
+        unmerged = "";
+      }
+      if (err.code === 1 || unmerged.length > 0 || /CONFLICT/i.test(stdout)) {
+        return {
+          status: "conflict",
+          details: [
+            stdout.trim(),
+            stderr.trim(),
+            ...(unmerged.length > 0 ? [`Unmerged paths:\n${unmerged}`] : []),
+          ]
+            .filter((line) => line.length > 0)
+            .join("\n"),
+        };
+      }
+
+      const stderrText = stderr.trim();
+      throw new Error(
+        stderrText.length > 0
+          ? stderrText
+          : `git rebase --onto ${ontoRef} ${upstream} ${branch} failed (exit code ${err.code ?? "unknown"})`,
+        { cause: error },
+      );
+    }
   }
 
   /** `git branch -D <branch>` + `git push origin --delete <branch>` —
@@ -288,5 +469,26 @@ export class RealGitTool implements GitTool {
     if (await this.branchExists(branch, { remote: true })) {
       await this.git.raw(["push", "origin", "--delete", branch]);
     }
+  }
+
+  /** `git for-each-ref --format='%(refname:short)' refs/heads
+   * refs/remotes/origin` — the enumeration primitive behind `list`
+   * (MAG-46-16 §2.1/LLD §3.10): every local branch name and every
+   * remote-tracking branch name in its short form (`origin/test/{ref}`), in
+   * one call. `%(refname:short)` already produces the short form git itself
+   * uses — `test/{ref}` for heads, `origin/test/{ref}` for the origin
+   * remote-tracking namespace — so no further transformation is needed
+   * beyond trimming whitespace and dropping empty lines. */
+  async listBranches(): Promise<string[]> {
+    const output = await this.git.raw([
+      "for-each-ref",
+      "--format=%(refname:short)",
+      "refs/heads",
+      "refs/remotes/origin",
+    ]);
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 }
