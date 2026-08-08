@@ -1,5 +1,11 @@
 # @weaver-engineering/task-phases
 
+## 0.3.0
+
+### Minor Changes
+
+- 1c9d798: `task promote` now accepts `[title] [message]` positionals (mirroring `wip`'s convention), letting the caller supply a real PR title/body instead of an auto-generated one.
+
 ## 0.2.0
 
 ### Minor Changes
