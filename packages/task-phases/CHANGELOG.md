@@ -1,5 +1,12 @@
 # @weaver-engineering/task-phases
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [3d88aa9]
+  - @weaver-engineering/gate-checks@0.2.0
+
 ## 0.3.0
 
 ### Minor Changes
