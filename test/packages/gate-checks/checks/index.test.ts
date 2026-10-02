@@ -12,6 +12,7 @@ describe("checks/index catalog", () => {
     "pr-title": ["ref", "pr-title"],
     "get-inbound-commits": ["base-ref", "head-ref"],
     "validate-spec-commit": [],
+    "validate-commit-message": [],
     "validate-test-commit": [],
     "validate-build-commit": [],
     "validate-task-commit": [],
@@ -21,9 +22,10 @@ describe("checks/index catalog", () => {
     "test-gate": [],
     "build-gate": [],
     "main-gate": [],
+    "docs-gate": [],
   };
 
-  describe("all 13 checks are registered", () => {
+  describe("all 15 checks are registered", () => {
     for (const [name, args] of Object.entries(expectedChecks)) {
       it(`has "${name}" with fn and requiredArgs ${JSON.stringify(args)}`, () => {
         const entry = catalog[name];

@@ -1,5 +1,5 @@
 import { type GateCheckResult, type GateCheckFn } from "../types.js";
-import { parseCommitMessage, isValidRef, commitTitleStartsWithRef, commitTitleContinuesBeyondRef } from "./helpers.js";
+import { validateCommitMessage } from "./validate-commit-message.js";
 
 export const requiredArgs: string[] = [];
 
@@ -18,24 +18,10 @@ export const fn: GateCheckFn = async (inspectors, args): Promise<GateCheckResult
     );
   }
 
-  const parsed = parseCommitMessage(commitMessage);
-  const explicitRef = args["ref"] as string | undefined;
-
-  if (explicitRef) {
-    if (parsed.ref !== explicitRef) {
-      violations.push(`Commit message title must start with ref "${explicitRef}"`);
-      return {
-        check: "validate-spec-commit",
-        args,
-        passed: false,
-        messages,
-        violations,
-        summary: violations.join("; "),
-        values: {},
-      };
-    }
-  } else if (!parsed.ref || !isValidRef(parsed.ref)) {
-    violations.push("Commit message title must start with a valid ref matching [A-Z]+-[0-9]+");
+  const msgResult = validateCommitMessage(commitMessage, args["ref"] as string | undefined);
+  messages.push(...msgResult.messages);
+  violations.push(...msgResult.violations);
+  if (!msgResult.ref) {
     return {
       check: "validate-spec-commit",
       args,
@@ -46,24 +32,7 @@ export const fn: GateCheckFn = async (inspectors, args): Promise<GateCheckResult
       values: {},
     };
   }
-
-  const ref = parsed.ref!;
-
-  messages.push(`Ref "${ref}" found in commit message`);
-
-  if (!commitTitleStartsWithRef(parsed.title, ref)) {
-    violations.push(`Commit message title must start with "${ref}"`);
-  } else if (!commitTitleContinuesBeyondRef(parsed.title, ref)) {
-    violations.push("Commit message title must continue beyond the ref");
-  } else {
-    messages.push(`Commit message title valid: "${parsed.title}"`);
-  }
-
-  if (!parsed.body) {
-    violations.push("Commit message body must not be empty");
-  } else {
-    messages.push("Commit message body present");
-  }
+  const ref = msgResult.ref;
 
   const taskDir = `docs/tasks/task-${ref}`;
   const taskFile = `${taskDir}/task-${ref}.md`;

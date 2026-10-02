@@ -3,6 +3,7 @@ import { fn as branchRefFn, requiredArgs as branchRefArgs } from "./branch-ref.j
 import { fn as prTitle, requiredArgs as prTitleArgs } from "./pr-title.js";
 import { fn as getInboundCommits, requiredArgs as getInboundCommitsArgs } from "./get-inbound-commits.js";
 import { fn as validateSpecCommit, requiredArgs as validateSpecCommitArgs } from "./validate-spec-commit.js";
+import { fn as validateCommitMessage, requiredArgs as validateCommitMessageArgs } from "./validate-commit-message.js";
 import { fn as validateTestCommit, requiredArgs as validateTestCommitArgs } from "./validate-test-commit.js";
 import { fn as validateBuildCommit, requiredArgs as validateBuildCommitArgs } from "./validate-build-commit.js";
 import { fn as validateTaskCommit, requiredArgs as validateTaskCommitArgs } from "./validate-task-commit.js";
@@ -13,6 +14,7 @@ import { fn as build, requiredArgs as buildArgs } from "./build.js";
 import { fn as testGate, requiredArgs as testGateArgs } from "./test-gate.js";
 import { fn as buildGate, requiredArgs as buildGateArgs } from "./build-gate.js";
 import { fn as mainGate, requiredArgs as mainGateArgs } from "./main-gate.js";
+import { fn as docsGate, requiredArgs as docsGateArgs } from "./docs-gate.js";
 
 export const catalog: FunctionCatalog = {
   "branch-ref": {
@@ -50,6 +52,16 @@ export const catalog: FunctionCatalog = {
       "Validates a spec-phase commit's message: title starts with a valid ref (or matches --ref, if given), continues beyond it, and the body is non-empty.",
     argDescriptions: {
       "spec-commit-ref": "Which commit to validate. Defaults to HEAD.",
+      "ref": "If given, the commit title must start with exactly this ref, not just any valid one.",
+    },
+  },
+  "validate-commit-message": {
+    fn: validateCommitMessage,
+    requiredArgs: validateCommitMessageArgs,
+    description:
+      "Validates a single commit's message with no path restrictions: title starts with a valid ref (or matches --ref, if given), continues beyond it, and the body is non-empty. The shared message rules behind every validate-*-commit check.",
+    argDescriptions: {
+      "commit-ref": "Which commit to validate. Defaults to HEAD.",
       "ref": "If given, the commit title must start with exactly this ref, not just any valid one.",
     },
   },
@@ -144,6 +156,17 @@ export const catalog: FunctionCatalog = {
     requiredArgs: mainGateArgs,
     description:
       "The build/{ref}|task/{ref} -> main promotion gate: branch-ref, validate-spec-commit, validate-test-commit, validate-build-commit, validate-task-commit, coverage, and build. GitHub-enforced via required branch protection.",
+    argDescriptions: {
+      "ref": "Expected task ref, cross-checked against the branch name.",
+      "destination-branch": "Branch to compare against. Defaults to \"origin/main\".",
+      "head-ref": "Branch to extract the ref from, passed through to branch-ref. Defaults to the current checked-out branch.",
+    },
+  },
+  "docs-gate": {
+    fn: docsGate,
+    requiredArgs: docsGateArgs,
+    description:
+      "The docs-repo main promotion gate: branch-ref, exactly-one-commit-ahead-of-destination, destination-not-advanced, and validate-commit-message on that one commit. No coverage or build step.",
     argDescriptions: {
       "ref": "Expected task ref, cross-checked against the branch name.",
       "destination-branch": "Branch to compare against. Defaults to \"origin/main\".",
