@@ -1,7 +1,7 @@
 {
   "name": "@weaver-engineering/task-phases",
   "description": "CLI to monitor and manage task phase transitions (spec -> test -> build -> deploy) for The Loom",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
